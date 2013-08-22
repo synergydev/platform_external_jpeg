@@ -243,7 +243,7 @@ jpeg_init_read_tile_scanline(j_decompress_ptr cinfo, huffman_index *index,
   else
     jpeg_decompress_per_scan_setup(cinfo);
 
-  int sample_size = DCTSIZE / cinfo->min_DCT_scaled_size;
+  int sample_size = DCTSIZE / cinfo->min_DCT_v_scaled_size;
 
   *height = jdiv_round_up(*height, sample_size);
   *width = cinfo->output_width;
@@ -275,7 +275,7 @@ jpeg_read_tile_scanline (j_decompress_ptr cinfo, huffman_index *index,
   // Calculates the boundary of iMCU
   int lines_per_iMCU_row = cinfo->max_v_samp_factor * DCTSIZE;
   int lines_per_iMCU_col = cinfo->max_h_samp_factor * DCTSIZE;
-  int sample_size = DCTSIZE / cinfo->min_DCT_scaled_size;
+  int sample_size = DCTSIZE / cinfo->min_DCT_v_scaled_size;
   JDIMENSION row_ctr = 0;
 
   if (cinfo->progressive_mode) {
@@ -324,7 +324,7 @@ jpeg_read_raw_data (j_decompress_ptr cinfo, JSAMPIMAGE data,
   }
 
   /* Verify that at least one iMCU row can be returned. */
-  lines_per_iMCU_row = cinfo->max_v_samp_factor * cinfo->min_DCT_scaled_size;
+  lines_per_iMCU_row = cinfo->max_v_samp_factor * cinfo->min_DCT_v_scaled_size;
   if (max_lines < lines_per_iMCU_row)
     ERREXIT(cinfo, JERR_BUFFER_SIZE);
 

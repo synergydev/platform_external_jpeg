@@ -736,7 +736,7 @@ jpeg_configure_huffman_index_scan(j_decompress_ptr cinfo,
 }
 
 /*
- * Module initialization routine for progressive Huffman entropy decoding.
+ * Configure the Huffman decoder reader position and bit buffer.
  */
 GLOBAL(void)
 jinit_phuff_decoder (j_decompress_ptr cinfo)

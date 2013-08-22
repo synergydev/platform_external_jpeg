@@ -2,6 +2,7 @@
  * jdcoefct.c
  *
  * Copyright (C) 1994-1997, Thomas G. Lane.
+ * Modified 2002-2011 by Guido Vollbeding.
  * This file is part of the Independent JPEG Group's software.
  * For conditions of distribution and use, see the accompanying README file.
  *
@@ -170,18 +171,14 @@ decompress_onepass (j_decompress_ptr cinfo, JSAMPIMAGE output_buf)
     for (MCU_col_num = coef->MCU_ctr; MCU_col_num <= last_MCU_col;
 	 MCU_col_num++) {
       /* Try to fetch an MCU.  Entropy decoder expects buffer to be zeroed. */
-      if (MCU_col_num < coef->pub.MCU_columns_to_skip) {
-        (*cinfo->entropy->decode_mcu_discard_coef) (cinfo);
-        continue;
-      } else {
-        jzero_far((void FAR *) coef->MCU_buffer[0],
-		(size_t) (cinfo->blocks_in_MCU * SIZEOF(JBLOCK)));
-        if (! (*cinfo->entropy->decode_mcu) (cinfo, coef->MCU_buffer)) {
-	  /* Suspension forced; update state counters and exit */
-	  coef->MCU_vert_offset = yoffset;
-	  coef->MCU_ctr = MCU_col_num;
-	  return JPEG_SUSPENDED;
-        }
+      if (cinfo->lim_Se)	/* can bypass in DC only case */
+	FMEMZERO((void FAR *) coef->MCU_buffer[0],
+		 (size_t) (cinfo->blocks_in_MCU * SIZEOF(JBLOCK)));
+      if (! (*cinfo->entropy->decode_mcu) (cinfo, coef->MCU_buffer)) {
+	/* Suspension forced; update state counters and exit */
+	coef->MCU_vert_offset = yoffset;
+	coef->MCU_ctr = MCU_col_num;
+	return JPEG_SUSPENDED;
       }
       /* Determine where data should go in output_buf and do the IDCT thing.
        * We skip dummy blocks at the right and bottom edges (but blkn gets
@@ -200,7 +197,7 @@ decompress_onepass (j_decompress_ptr cinfo, JSAMPIMAGE output_buf)
 	useful_width = (MCU_col_num < last_MCU_col) ? compptr->MCU_width
 						    : compptr->last_col_width;
 	output_ptr = output_buf[compptr->component_index] +
-	  yoffset * compptr->DCT_scaled_size;
+	  yoffset * compptr->DCT_v_scaled_size;
 	start_col = MCU_col_num * compptr->MCU_sample_width;
 	for (yindex = 0; yindex < compptr->MCU_height; yindex++) {
 	  if (cinfo->input_iMCU_row < last_iMCU_row ||
@@ -208,13 +205,13 @@ decompress_onepass (j_decompress_ptr cinfo, JSAMPIMAGE output_buf)
 	    output_col = start_col;
 	    for (xindex = 0; xindex < useful_width; xindex++) {
 	      (*inverse_DCT) (cinfo, compptr,
-		        (JCOEFPTR) coef->MCU_buffer[blkn+xindex],
-		        output_ptr, output_col);
-	      output_col += compptr->DCT_scaled_size;
+			      (JCOEFPTR) coef->MCU_buffer[blkn+xindex],
+			      output_ptr, output_col);
+	      output_col += compptr->DCT_h_scaled_size;
 	    }
 	  }
 	  blkn += compptr->MCU_width;
-	  output_ptr += compptr->DCT_scaled_size;
+	  output_ptr += compptr->DCT_v_scaled_size;
 	}
       }
     }
@@ -321,7 +318,7 @@ consume_data (j_decompress_ptr cinfo)
 #ifdef ANDROID_TILE_BASED_DECODE
             if (cinfo->tile_decode && cinfo->input_scan_number == 0) {
               // need to do pre-zero ourselves.
-              jzero_far((void FAR *) coef->MCU_buffer[blkn-1],
+              FMEMZERO((void FAR *) coef->MCU_buffer[blkn-1],
                         (size_t) (SIZEOF(JBLOCK)));
             }
 #endif
@@ -362,7 +359,6 @@ consume_data_multi_scan (j_decompress_ptr cinfo)
   huffman_index *index = cinfo->entropy->index;
   int i, retcode, ci;
   int mcu = cinfo->input_iMCU_row;
-  jinit_phuff_decoder(cinfo);
   for (i = 0; i < index->scan_count; i++) {
     (*cinfo->inputctl->finish_input_pass) (cinfo);
     jset_input_stream_position(cinfo, index->scan[i].bitstream_offset);
@@ -507,7 +503,7 @@ consume_data_build_huffman_index_progressive (j_decompress_ptr cinfo,
             coef->MCU_buffer[blkn++] = buffer_ptr++;
             if (cinfo->input_scan_number == 0) {
               // need to do pre-zero by ourself.
-              jzero_far((void FAR *) coef->MCU_buffer[blkn-1],
+              FMEMZERO((void FAR *) coef->MCU_buffer[blkn-1],
                         (size_t) (SIZEOF(JBLOCK)));
             }
           }
@@ -609,15 +605,15 @@ decompress_data (j_decompress_ptr cinfo, JSAMPIMAGE output_buf)
     /* Loop over all DCT blocks to be processed. */
     for (block_row = 0; block_row < block_rows; block_row++) {
       buffer_ptr = buffer[block_row];
-      output_col = start_block * compptr->DCT_scaled_size;
+      output_col = start_block * compptr->DCT_v_scaled_size;
       buffer_ptr += start_block;
       for (block_num = start_block; block_num < width_in_blocks; block_num++) {
 	(*inverse_DCT) (cinfo, compptr, (JCOEFPTR) buffer_ptr,
 			output_ptr, output_col);
 	buffer_ptr++;
-	output_col += compptr->DCT_scaled_size;
+	output_col += compptr->DCT_h_scaled_size;
       }
-      output_ptr += compptr->DCT_scaled_size;
+      output_ptr += compptr->DCT_v_scaled_size;
     }
   }
 
@@ -907,9 +903,9 @@ decompress_smooth_data (j_decompress_ptr cinfo, JSAMPIMAGE output_buf)
 	DC4 = DC5; DC5 = DC6;
 	DC7 = DC8; DC8 = DC9;
 	buffer_ptr++, prev_block_row++, next_block_row++;
-	output_col += compptr->DCT_scaled_size;
+	output_col += compptr->DCT_h_scaled_size;
       }
-      output_ptr += compptr->DCT_scaled_size;
+      output_ptr += compptr->DCT_v_scaled_size;
     }
   }
 
@@ -1031,6 +1027,9 @@ jinit_d_coef_controller (j_decompress_ptr cinfo, boolean need_full_buffer)
     for (i = 0; i < D_MAX_BLOCKS_IN_MCU; i++) {
       coef->MCU_buffer[i] = buffer + i;
     }
+    if (cinfo->lim_Se == 0)	/* DC only case: want to bypass later */
+      FMEMZERO((void FAR *) buffer,
+	       (size_t) (D_MAX_BLOCKS_IN_MCU * SIZEOF(JBLOCK)));
     coef->pub.consume_data = dummy_consume_data;
     coef->pub.decompress_data = decompress_onepass;
     coef->pub.coef_arrays = NULL; /* flag for no virtual arrays */
